@@ -3,9 +3,9 @@ use warnings;
 use Irssi;
 use LWP::Simple;   # get()
 use vars qw($VERSION %IRSSI);
-$VERSION = '0.1';
+$VERSION = '0.1.1';
 %IRSSI = (
-	authors     => 'Andreas (llandon) Schwarz',
+	authors     => 'Andreas Schwarz',
 	name        => 'GWAF',
 	description => 'GWAF Google Weather API Frontend');
 
@@ -105,6 +105,10 @@ sub gwafout(@) {
 		$von = index($xmldata, $splitstr[$i],$von)+length($splitstr[$i]);
 		$bis = index($xmldata,'"/>',$von);
 		$elements[$i] = substr($xmldata,$von,$bis-$von);
+		if( !defined $elements[$i] || $elements[$i] eq "" ) { 
+			ircsend($server, $chan, "Google is broken, try again later");
+			return 1;
+		}
 	}
 
 	$message = "Wetter fuer $elements[0] ($elements[1]) $elements[4] \xB0".
