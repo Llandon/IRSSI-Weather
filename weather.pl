@@ -26,10 +26,11 @@ sub ircsend;         # send string to irc
 sub get_href;        # get hash ref from api 
 sub render_forecast; # generate fc output
 sub render_options;  # generate options output
-sub get_citycode;    # get citycode from api
 sub render_credit;   # generate credit output
 
-$VERSION = '0.2.2';
+my $max_options = 10;
+
+$VERSION = '0.2.3';
 %IRSSI = (
 	authors     => 'Andreas (llandon) Schwarz',
 	name        => 'irssiweather',
@@ -52,7 +53,7 @@ sub irssiweather {
 	my $checksum = md5_hex($api_pid, $api_key, $data);
 	my $url = "http://api.wetter.com/location/index/search/$data/project/$api_pid/cs/$checksum";
 	my $search_xml_href = get_href($url);
-
+#	print Dumper $search_xml_href;
 	my $result = $search_xml_href->{result}->{item};
 	my $hits = $search_xml_href->{hits};
 
@@ -60,16 +61,15 @@ sub irssiweather {
 		print "WCOM-ZERO: $url";
 		ircsend($server, $hunter, "\x02Kein Suchergebnis");
 		return 0;
-	}elsif($hits > 9) {
+	}elsif($hits > $max_options) {
 		print "WCOM-OVER: $url";
-		ircsend($server, $hunter, "\x02Zu viele Ergebnisse, bitte konkretisieren");
+		ircsend($server, $hunter, render_options($result));
+		ircsend($server, $hunter, "\x02Mehr als $max_options Ergebnisse. (restlichen werden nicht angezeigt)");
 		return 0;
 	}elsif($hits > 1) {
 		## output options
 		print "WCOM-MULTI: $url";
-		ircsend($server, $hunter, 
-			"\x02Kein eindeutiges Suchergebnis, bitte citycode wählen\n"
-			. render_options($result)
+		ircsend($server, $hunter, render_options($result)
 		);	
 		return 0;
 	}elsif($hits==1){
@@ -107,6 +107,8 @@ sub get_href {
 	my $result_href = $xml->XMLin(
 		$api_data, 
 		SuppressEmpty => undef,
+#		KeyAttr => { item => '+city_code' }
+		KeyAttr => { item => 'value' }
 	);
 	return $result_href;
 }
@@ -127,7 +129,7 @@ sub render_forecast {
 	$output .= " ($post_code)" if(defined $post_code);
 	$output .= " $city_code" if(defined $city_code);
 	$output .= "\n";
-#	$output .= "    " . $credit->{text} . " " . $credit->{link});
+
 	my @fc = $fc_xml_href->{forecast}->{date};
 	for(my $i=0; $i<3; $i++) {
 		my @mint; my @maxt; my @text;
@@ -146,40 +148,41 @@ sub render_forecast {
 
 sub render_options {
 	my $options = shift;
-	my $output = '';
-	my ($city_code, $adm1, $adm2, $adm4);
+	my $output = "\x02Kein eindeutiges Suchergebnis, bitte den Suchstring konkretisieren\n";
+	my ($name, $city_code, $plz, $adm1, $adm2, $adm4, $quarter);
 
-	foreach my $city (keys $options) {
-		$city_code = $options->{$city}->{city_code};
-		$adm4 = $options->{$city}->{adm_4_name};
-		$adm1 = $options->{$city}->{adm_1_code};
-		$adm2 = $options->{$city}->{adm_2_name};
+	my $count = 0;
+	foreach my $key (keys $options) {
+		return $output if($count >= $max_options);
 
-		if(defined  $city and defined $city_code) {
-			$output .= "    $city: $city_code";
+		$name = $options->{$key}->{name};
+		$city_code = $options->{$key}->{city_code};
+		$plz = $options->{$key}->{plz};
+		$adm4 = $options->{$key}->{adm_4_name};
+		$adm1 = $options->{$key}->{adm_1_code};
+		$adm2 = $options->{$key}->{adm_2_name};
+		$quarter = $options->{$key}->{quarter};
+
+		if(defined $name and defined $city_code) {
+			$output .= "    \x02$name:\x02 ";
+			$output .= "\x0305" if(!defined $plz);
+			$output .= "$city_code";
+			$output .= "\x03" if(!defined $plz);
 		}else{
 			return "Fehler";
 		}
-		$output .= " ($adm4)" if(defined $adm4);
-		$output .= " $adm1" if(defined $adm1);
+		$output .= " (" if(defined $quarter or defined $plz);
+		$output .= $quarter if(defined $quarter);
+		$output .= " " if(defined $quarter and defined $plz);
+		$output .= "\x0305$plz\x03" if(defined $plz);
+		$output .= ")" if(defined $quarter or defined $plz);
+		$output .= " $adm4" if(defined $adm4 and !defined $quarter);
 		$output .= " $adm2" if(defined $adm2);
+		$output .= " $adm1" if(defined $adm1);
 		$output .= "\n";
+		++$count;
 	}
 	return $output;
-}
-
-sub get_citycode {
-	my $xml_data = shift;
-	my $hits = $xml_data->{hits};
-	my $result = $xml_data->{result}->{item};
-
-	if(0 == $hits) {
-		return -1;
-	}elsif(1 == $hits) {
-		return $result->{city_code};
-	}else{
-		return $result;
-	}
 }
 
 sub render_credit {
@@ -191,6 +194,7 @@ sub render_credit {
 		." Zeilen welche wa2aal8Ieth1laeD enthalten ignorieren."
 		." Es ist nicht sinnvoll alle Queries zu ignorieren,"
 		." denn hierüber werden auch die Optionen bei nicht eindeutigen Anfragen"
-		." aufgelistet.";
+		." aufgelistet.\nFür irssi-Nutzer wäre das die Zeile:"
+		." /ignore -pattern \"wa2aal8Ieth1laeD\" * MSGS";
 	return $credit;
 }
