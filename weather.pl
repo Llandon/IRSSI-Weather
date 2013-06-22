@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+use 5.014_000; # backward compatibility v5.14.0
 use vars qw($VERSION %IRSSI);
 use strict;
 use warnings;
@@ -28,7 +29,7 @@ sub render_options;  # generate options output
 sub get_citycode;    # get citycode from api
 sub render_credit;   # generate credit output
 
-$VERSION = '0.2.1';
+$VERSION = '0.2.2';
 %IRSSI = (
 	authors     => 'Andreas (llandon) Schwarz',
 	name        => 'irssiweather',
@@ -43,7 +44,7 @@ sub irssiweather {
 	my $cmd = substr($data, 0, index($data, ' '), '');
 	$data =~ s/.//; # remove leading space
 
-	if('llandon' ne $hunter or $cmd !~ m/!wetter|!weather|!wcom|!gwaf/) {
+	if($cmd !~ m/!wetter|!weather|!wcom/) {
 		return 0;
 	}
 
