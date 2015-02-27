@@ -30,7 +30,7 @@ sub render_credit;   # generate credit output
 
 my $max_options = 10;
 
-$VERSION = '0.2.3';
+$VERSION = '0.2.4';
 %IRSSI = (
 	authors     => 'Andreas (llandon) Schwarz',
 	name        => 'irssiweather',
@@ -42,10 +42,18 @@ Irssi::signal_add("message public", \&irssiweather);
 sub irssiweather {
 	## processing input
 	my ($server, $data, $hunter, $mask, $chan) = @_;
-	my $cmd = substr($data, 0, index($data, ' '), '');
-	$data =~ s/.//; # remove leading space
+	$data =~ s/ +/ /g; # remove multiple spaces
+	my @l_arr = split(/ /,$data);
 
+	my $cmd = $l_arr[0]; #substr($data, 0, index($data, ' '), '');
 	if($cmd !~ m/!wetter|!weather|!wcom/) {
+		return 0;
+	}
+	shift(@l_arr); # remove cmd
+	$data = join(' ', @l_arr);
+
+	if('' eq $data) {
+		ircsend($server, $hunter, "Bitte Suchanfrage anfügen, z.B. !wetter 91058 / !wetter DE0007131 / !wetter Buxtehude");
 		return 0;
 	}
 
@@ -53,7 +61,6 @@ sub irssiweather {
 	my $checksum = md5_hex($api_pid, $api_key, $data);
 	my $url = "http://api.wetter.com/location/index/search/$data/project/$api_pid/cs/$checksum";
 	my $search_xml_href = get_href($url);
-#	print Dumper $search_xml_href;
 	my $result = $search_xml_href->{result}->{item};
 	my $hits = $search_xml_href->{hits};
 
@@ -78,6 +85,10 @@ sub irssiweather {
 		$checksum = md5_hex($api_pid, $api_key, $city_code);
 		$url = "http://api.wetter.com/forecast/weather/city/$city_code/project/$api_pid/cs/$checksum";
 		my $fc_xml_href = get_href($url);
+		if($fc_xml_href eq '' || exists($fc_xml_href->{error}) ) {
+				ircsend($server, $hunter, 'Schnittstellenfehler');
+				return 0;
+		}
 
 		## output forecast
 		print "WCOM-SINGLE: $url";
@@ -124,7 +135,8 @@ sub render_forecast {
 	if(defined $city) {
 		$output .= "\x02Wetter für $city";
 	}else{
-		return 0;
+		$output = 'Schnittstellenfehler';
+		return $output;
 	}
 	$output .= " ($post_code)" if(defined $post_code);
 	$output .= " $city_code" if(defined $city_code);
