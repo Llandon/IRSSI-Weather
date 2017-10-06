@@ -43,11 +43,11 @@ sub getTemperatures($);        # get temperature array
 sub getPrecipProbabilities($); # get temperature array
 sub arrayToGraph(\@;$;$;$;$);           # visualize array
 
-$VERSION = '0.3.0';
+$VERSION = '0.3.1';
 %IRSSI = (
 	authors     => 'Andreas Schwarz',
 	name        => 'irssiweather',
-	description => 'forecast.io frontend'
+	description => 'Dark Sky API frontend'
 );
 
 Irssi::signal_add("message public", \&irssiweather);
@@ -85,6 +85,8 @@ sub irssiweather() {
 	my $callForecast     = '!wetter';
 	my $callTempForecast = '!temp';
 	my $callRainForecast = '!rain';
+	my $defaultLocation  = '91058, Deutschland';
+
 	## processing input
 	my ($server, $data, $hunter, $mask, $chan) = @_;
 
@@ -94,43 +96,44 @@ sub irssiweather() {
 	my @temps;
 	my @probabs;
 
-	if($data =~ m/^$callForecast/ or $data =~ m/^$callTempForecast/) {
+	if($data =~ m/^$callForecast/ or $data =~ m/^$callTempForecast/ or $data =~ m/^$callRainForecast/) {
 		if(autoIgnore($hunter)) {
 			ircsend($server, $hunter, "I ignore your calls for a while because you're annoying other people.");
 			return 0;
 		}
 	}
 	
-	if($data =~ m/^$callForecast *$/) {
-		$data     = '91058, Deutschland';
+	if($data =~ m/^$callForecast.*$/) {
+		if($data =~ m/^$callForecast \w+/) {
+			$data =~ s/^$callForecast //;
+		}else{
+			$data     = $defaultLocation;
+		}
 		$location = getLocation($data);
 		$forecast = getForecast($location);
 		$output   = renderForecast($location, $forecast);
-	}elsif($data =~ m/^$callTempForecast *$/) {
-		$data     = '91058, Deutschland';
+	}elsif($data =~ m/^$callTempForecast.*$/) {
+		if($data =~ m/^$callTempForecast \w+/) {
+			$data =~ s/^$callTempForecast //;
+		}else{
+			$data = $defaultLocation;
+		}
 		$location = getLocation($data);
 		@temps    = getTemperatures($location);
 		$output   = renderTempForecast($location, \@temps);
-	}elsif($data =~ m/^$callRainForecast *$/) {
-		$data     = '91058, Deutschland';
+	}elsif($data =~ m/^$callRainForecast.*$/) {
+		if($data =~ m/^$callRainForecast \w+/) {
+			$data =~ s/^$callRainForecast //;
+		}else{
+			$data     = $defaultLocation;
+		}
 		$location = getLocation($data);
 		@probabs  = getPrecipProbabilities($location);
 		$output   = renderRainForecast($location, @probabs, '03', '02');
-	}elsif($data =~ m/^$callForecast \w+/) {
-		$data     =~ s/^$callForecast //;
-		$location = getLocation($data);
-		$forecast = getForecast($location);
-		$output   = renderForecast($location, $forecast);
-	}elsif($data =~ m/^$callTempForecast \w+/) {
-		$data     =~ s/^$callTempForecast //;
-		$location = getLocation($data);
-		@temps    = getTemperatures($location);
-		$output   = renderTempForecast($location, \@temps);
-	}elsif($data =~ m/^$callRainForecast \w+/) {
-		$data     =~ s/^$callRainForecast //;
-		$location = getLocation($data);
-		@probabs  = getPrecipProbabilities($location);
-		$output   = renderRainForecast($location, @probabs, '03', '02');
+	}elsif($data =~ m/^!autoignorelist$/) {
+#		autoIgnore($hunter);
+		$Data::Dumper::Indent = 3;
+		print Dumper(%ignoreList);
 	}else{
 		return 0;
 	}
@@ -186,7 +189,7 @@ sub getForecast($) {
 	my $lon = $location->{lon};
 
 	my $options  = 'lang=de&units=si&exclude=minutely,daily,flags&extend=hourly';
-	my $api      = 'https://api.forecast.io/forecast';
+	my $api      = 'https://api.darksky.net/forecast';
 
 	my $url = $api . '/' . $api_key . '/' . $lat . ',' . $lon . "?$options";
 	my $response = get($url);
@@ -207,7 +210,7 @@ sub getTemperatures($) {
 	my $offset   = tz_local_offset();
 	my $timebase = time - (time%86400) - $offset;
 
-	my $api      = 'https://api.forecast.io/forecast';
+	my $api      = 'https://api.darksky.net/forecast';
 	my $urlfd = $api . '/' . $api_key . '/' . $lat . ',' . $lon . ',' . $timebase . "?$options";
 	my $urlnd = $api . '/' . $api_key . '/' . $lat . ',' . $lon . "?$options";
 
@@ -248,7 +251,7 @@ sub getPrecipProbabilities($) {
 	my $offset   = tz_local_offset();
 	my $timebase = time - (time%86400) - $offset;
 
-	my $api      = 'https://api.forecast.io/forecast';
+	my $api      = 'https://api.darksky.net/forecast';
 	my $urlfd = $api . '/' . $api_key . '/' . $lat . ',' . $lon . ',' . $timebase . "?$options";
 	my $urlnd = $api . '/' . $api_key . '/' . $lat . ',' . $lon . "?$options";
 
@@ -301,34 +304,84 @@ sub renderForecast($$) {
 		$place = $dispname;
 	}
 
-	my $output = "\x02Wetter für $place\n";
+	my $output = "\x02Wetter für $place ";
+	$output .= "\x0305" . "!\x03" if defined $forecast->{alerts};
+	my $alert = '';
+	$alert = $forecast->{alerts}[0]->{description} if defined $forecast->{alerts};
+	$output .= "\n";
+
 	my $hourly = $forecast->{hourly};
 
-	my $offset   = tz_local_offset();
-	my $timebase = time - (time%86400) - $offset + 86400;
+	my $day = strftime("%a",localtime($hourly->{data}[0]->{time}));
+	$output .= "\x02$day:\x02 ";
 
-	my $tbOffset=0;
-	while(defined $hourly->{data}[$tbOffset]->{time} and
-		$hourly->{data}[$tbOffset]->{time} < $timebase) {
-		++$tbOffset;
+	my $i=0;
+	my $multi = 0;
+	
+	# fast forward to first relevant data point
+	while( 
+		!( strftime("%H", localtime($hourly->{data}[$i]->{time})) 
+		~~ [ 6, 12, 18, 0]) 
+		) {
+		++$i;
+		last if $i > 10; # full brake
 	}
 
-	for(my $i=0; $i<=2; ++$i) { # Zeilen
-		my $day = strftime("%a",localtime(time+24*60*60*$i+86400));
-		$output .= "    \x02$day:\x02 ";
+	# how far we have to intend the first value
+	my $hour = strftime("%H", localtime($hourly->{data}[$i]->{time}));
+	if($hour==6) {     # 06 12 18 00
+		$multi = 0;
+	}elsif($hour==12){ # ...12 18 00
+		$multi = 1;
+	}elsif($hour==18){ # ......18 00
+		$multi = 2;
+	}else{             # .........00
+		$multi = 3;
+	}
 
-		for(my $j=6; $j<=4*6; $j+=6) {
-			my $temp = sprintf("%.0f",$hourly->{data}[$j+$i*4*6+$tbOffset]->{temperature});
-			my $rain = sprintf("%.0f",$hourly->{data}[$j+$i*4*6+$tbOffset]->{precipProbability}*100);
-			my $icon = $hourly->{data}[$j+$i*4*6+$tbOffset]->{icon};
+	my $fill = "                         ";
+
+	my $line=0;
+	my $first = 1;
+	while(1) { # Zeilen
+		$hour=strftime("%H", localtime($hourly->{data}[$i]->{time}));
+
+		if( $hour ~~ [6, 12, 18, 0] ) {
+			if($first) {
+				for(my $f=0; $f<$multi; ++$f) {
+					print $f;
+					$output .= $fill;
+				}
+			}
+
+			$day = strftime("%a",localtime($hourly->{data}[$i]->{time}));
+			$output .= "\x02$day:\x02 " if $hour == 6 and $line != 0;
+			
+			my $temp = sprintf("%3.0f",$hourly->{data}[$i]->{temperature});
+			$temp =~ s/ / /g;
+			my $rain = sprintf("%3.0f",
+				$hourly->{data}[$i]->{precipProbability}*100);
+			$rain =~ s/ / /g;
+			my $icon = sprintf("%-13s", 
+				replaceIcon($hourly->{data}[$i]->{icon},0));
+			$icon =~ s/ / /g;
+
 			$output .= 
-				"\x0303" . $temp . "\x03°C/" . # "℃ / ".
-				"\x0310" . $rain . "\x03% " .
-				replaceIcon($icon,0);
-			$output .= " " if $j!=4*6;
+				"\x0303" . $temp . "\x03°C " . # "℃ / ".
+				"\x0310" . $rain . "\x03% " .
+				$icon;
+				$output .= " ";
 		}
-		$output .= "\n";
+
+		last if !defined $hourly->{data}[$i];
+		last if(strftime("%j",localtime($hourly->{data}[$i]->{time})) - strftime("%j",localtime(time)) >= 3);
+
+		++$i;
+		$output .= "\n" if $hour == 0;
+		++$line if $hour == 0;
+		$first = 0;
 	}
+	$output .= "\n" . $alert if $alert ne '';
 	return $output;
 }
 
@@ -419,7 +472,7 @@ sub renderRainForecast($\@;$;$) {
 		$place = $dispname;
 	}
 
-	my $output = "\x02Niederschlagsverlauf für $place\n";
+	my $output = "\x02Niederschlagswahrscheinlichkeit für $place\n";
 
 	for(my $i=0; $i<3; ++$i) { # Zeilen
 		my $day = strftime("%a",localtime(time+24*60*60*$i));
