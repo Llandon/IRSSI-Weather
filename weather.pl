@@ -44,7 +44,7 @@ sub getTemperatures($);        # get temperature array
 sub getPrecipProbabilities($); # get temperature array
 sub arrayToGraph(\@;$;$;$;$);           # visualize array
 
-$VERSION = '0.3.1';
+$VERSION = '0.3.2';
 %IRSSI = (
 	authors     => 'Andreas Schwarz',
 	name        => 'irssiweather',
