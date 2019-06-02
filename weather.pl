@@ -12,6 +12,7 @@ use POSIX qw(strftime tzset);
 use LWP::Simple;
 use Data::Dumper;
 use JSON;
+use URI::Escape;
 use List::MoreUtils qw( minmax );
 
 use File::Basename;
@@ -151,7 +152,7 @@ sub ircsend($$$) {
 }
 
 sub getLocation($) {
-	my $query = $_[0];
+	my $query = uri_escape($_[0]);
 
 	if($query eq "") {
 		print "Kein Ort übergeben\n";
