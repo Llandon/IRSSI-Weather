@@ -58,7 +58,7 @@ sub autoIgnore($) {
 	return 0 if('llandon' eq $user);
 
 	if(defined $ignoreList{$user}->{'time'}) {
-		push($ignoreList{$user}->{'time'}, time);
+		push(@{$ignoreList{$user}->{'time'}}, time);
 	}else{
 		$ignoreList{$user}->{'time'} = [time];
 	}
